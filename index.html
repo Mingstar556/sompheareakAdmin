@@ -45,8 +45,19 @@
           <input id="pin" type="password" placeholder="Enter Admin Security PIN" autofocus autocomplete="current-password" />
           <button id="togglePinVis" type="button" class="btn sm ghost" style="position:absolute;right:6px;padding:6px;border:none" title="Show/Hide PIN">👁️</button>
         </div>
+        <div style="display:flex;align-items:center;justify-content:flex-start;margin:10px 0 12px">
+          <label class="remember-label" for="adminRememberCheckbox">
+            <input type="checkbox" id="adminRememberCheckbox" checked />
+            <span class="checkbox-custom" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </span>
+            <span>Remember me on this device</span>
+          </label>
+        </div>
         <p id="pinErr" class="err hidden">Incorrect PIN. Please check and try again.</p>
-        <button id="pinBtn" class="btn primary" style="width:100%;margin-top:6px">Login to Admin Desk</button>
+        <button id="pinBtn" class="btn primary" style="width:100%;margin-top:2px">Login to Admin Desk</button>
         <div style="text-align:center;margin-top:10px">
           <a href="#" onclick="window.open(window.SR_CONFIG ? window.SR_CONFIG.STOREFRONT_URL : 'http://127.0.0.1:5000', '_blank'); return false;" class="muted small" style="text-decoration:underline;display:inline-flex;align-items:center;gap:4px">🛍️ Open Customer Storefront ↗</a>
         </div>

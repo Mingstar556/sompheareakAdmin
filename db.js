@@ -156,7 +156,7 @@ const SRDB = (() => {
 
   async function api(path, opts = {}) {
     try {
-      const token = sessionStorage.getItem('sr_admin_token');
+      const token = sessionStorage.getItem('sr_admin_token') || localStorage.getItem('sr_admin_token');
       const headers = {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -168,10 +168,11 @@ const SRDB = (() => {
       });
       const ctype = res.headers.get('content-type') || '';
       if (!res.ok) {
-        if (res.status === 401 && sessionStorage.getItem('sr_admin') === '1') {
+        if (res.status === 401) {
           // Token expired or invalid - clear session and re-gate
           sessionStorage.removeItem('sr_admin_token');
           sessionStorage.removeItem('sr_admin');
+          localStorage.removeItem('sr_admin_token');
           localStorage.removeItem('sr_admin_mode');
           location.reload();
         }
@@ -407,10 +408,11 @@ const SRDB = (() => {
     logout() {
       sessionStorage.removeItem('sr_admin_token');
       sessionStorage.removeItem('sr_admin');
+      localStorage.removeItem('sr_admin_token');
       localStorage.removeItem('sr_admin_mode');
     },
     isAuthenticated() {
-      return Boolean(sessionStorage.getItem('sr_admin_token'));
+      return Boolean(sessionStorage.getItem('sr_admin_token') || localStorage.getItem('sr_admin_token'));
     },
     onChange: fn => listeners.push(fn),
     sync: syncFromPython,

@@ -201,6 +201,15 @@ if (changeApiBtn && window.SR_CONFIG) {
   };
 }
 
+const adminRememberEl = $('#adminRememberCheckbox');
+if (adminRememberEl) {
+  const isRemember = localStorage.getItem('sr_admin_remember') !== 'false';
+  adminRememberEl.checked = isRemember;
+  adminRememberEl.onchange = () => {
+    localStorage.setItem('sr_admin_remember', adminRememberEl.checked ? 'true' : 'false');
+  };
+}
+
 $('#pinBtn').onclick = async () => {
   const val = pinInput.value.trim();
   if (!val) {
@@ -217,6 +226,16 @@ $('#pinBtn').onclick = async () => {
 
   if (res.ok) {
     $('#pinErr').classList.add('hidden');
+    const isRemember = adminRememberEl ? adminRememberEl.checked : (localStorage.getItem('sr_admin_remember') !== 'false');
+    if (isRemember && res.data && res.data.token) {
+      localStorage.setItem('sr_admin_token', res.data.token);
+      localStorage.setItem('sr_admin', '1');
+      localStorage.setItem('sr_admin_remember', 'true');
+    } else {
+      localStorage.removeItem('sr_admin_token');
+      localStorage.removeItem('sr_admin');
+      localStorage.setItem('sr_admin_remember', 'false');
+    }
     enter();
   } else {
     $('#pinErr').textContent = res.error || 'Invalid Admin PIN';
@@ -375,6 +394,10 @@ function openAdminMoreSheet() {
 function logoutAdmin() {
   if (confirm('Are you sure you want to log out from Admin Desk?')) {
     sessionStorage.removeItem('sr_admin');
+    sessionStorage.removeItem('sr_admin_token');
+    localStorage.removeItem('sr_admin');
+    localStorage.removeItem('sr_admin_token');
+    localStorage.removeItem('sr_admin_mode');
     sessionStorage.removeItem('sr_front_edit_authorized');
     localStorage.removeItem('sr_front_edit_authorized');
     location.reload();
@@ -2257,7 +2280,15 @@ ${esc(JSON.stringify({
 // Apply logo on initial load
 applyLogo();
 
-// Auto enter if already authenticated this session
-if (sessionStorage.getItem('sr_admin')) {
+// Auto enter if already authenticated or remembered on this device
+const rememberedToken = sessionStorage.getItem('sr_admin_token') || (
+  localStorage.getItem('sr_admin_remember') !== 'false' ? localStorage.getItem('sr_admin_token') : null
+);
+
+if (rememberedToken) {
+  sessionStorage.setItem('sr_admin_token', rememberedToken);
+  sessionStorage.setItem('sr_admin', '1');
+  enter();
+} else if (sessionStorage.getItem('sr_admin') === '1') {
   enter();
 }
