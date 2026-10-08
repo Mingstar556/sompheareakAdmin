@@ -185,20 +185,27 @@ $('#togglePinVis').onclick = () => {
   pinInput.type = pinInput.type === 'password' ? 'text' : 'password';
 };
 
-$('#pinBtn').onclick = () => {
+$('#pinBtn').onclick = async () => {
   const val = pinInput.value.trim();
-  const targetPin = 'Sompheareak.com04/10/2026-Ming';
-  const correct = String(SRDB.settings().admin_pin || SRDB.settings().adminPin || targetPin);
-  if (val === targetPin || (correct && val === correct)) {
-    if (SRDB.settings().admin_pin !== val) {
-      try { SRDB.saveSettings({ admin_pin: val, adminPin: val }); } catch (e) {}
-    }
-    sessionStorage.setItem('sr_admin', '1');
-    sessionStorage.setItem('sr_admin_pin', val);
-    localStorage.setItem('sr_admin_mode', '1');
+  if (!val) {
+    $('#pinErr').textContent = 'Please enter PIN code';
+    $('#pinErr').classList.remove('hidden');
+    return;
+  }
+  $('#pinBtn').disabled = true;
+  $('#pinBtn').textContent = 'Verifying...';
+
+  const res = await SRDB.login(val);
+  $('#pinBtn').disabled = false;
+  $('#pinBtn').textContent = 'Login to Dashboard';
+
+  if (res.ok) {
+    $('#pinErr').classList.add('hidden');
     enter();
   } else {
+    $('#pinErr').textContent = res.error || 'Invalid Admin PIN';
     $('#pinErr').classList.remove('hidden');
+    pinInput.select();
   }
 };
 
@@ -207,10 +214,7 @@ pinInput.onkeydown = e => {
 };
 
 $('#logoutBtn').onclick = () => {
-  sessionStorage.removeItem('sr_admin');
-  sessionStorage.removeItem('sr_admin_pin');
-  localStorage.removeItem('sr_admin_mode');
-  location.reload();
+  logoutAdmin();
 };
 
 function enter() {

@@ -146,13 +146,13 @@ const SRDB = (() => {
   const API_BASE = (window.SR_CONFIG && window.SR_CONFIG.API_BASE !== undefined)
     ? window.SR_CONFIG.API_BASE
     : (localStorage.getItem('sr_api_base') || (window.location.port === '5000' ? '' : 'http://127.0.0.1:5000'));
+
   async function api(path, opts = {}) {
     try {
-      const pin = sessionStorage.getItem('sr_admin_pin') || (sessionStorage.getItem('sr_admin') === '1' ? (data?.settings?.admin_pin || '1234') : '');
+      const token = sessionStorage.getItem('sr_admin_token');
       const headers = {
         'Content-Type': 'application/json',
-        'X-Client-Role': 'admin',
-        ...(pin ? { 'X-Admin-PIN': pin, 'Authorization': `Bearer ${pin}` } : {}),
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         ...(opts.headers || {})
       };
       const res = await fetch(`${API_BASE}${path}`, {
@@ -160,12 +160,40 @@ const SRDB = (() => {
         headers,
       });
       if (!res.ok) {
+        if (res.status === 401 && sessionStorage.getItem('sr_admin') === '1') {
+          // Token expired or invalid - clear session and re-gate
+          sessionStorage.removeItem('sr_admin_token');
+          sessionStorage.removeItem('sr_admin');
+          localStorage.removeItem('sr_admin_mode');
+          location.reload();
+        }
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       return await res.json();
     } catch (e) {
       return null;
+    }
+  }
+
+  // Token exchange authentication against /api/auth/exchange
+  async function login(pin) {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: String(pin).trim() })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok && data.token) {
+        sessionStorage.setItem('sr_admin_token', data.token);
+        sessionStorage.setItem('sr_admin', '1');
+        localStorage.setItem('sr_admin_mode', '1');
+        return { ok: true, data };
+      }
+      return { ok: false, error: data.error || 'Invalid credentials' };
+    } catch (err) {
+      return { ok: false, error: err.message || 'Connection error' };
     }
   }
 
@@ -342,6 +370,15 @@ const SRDB = (() => {
   }, 40);
 
   return {
+    login,
+    logout() {
+      sessionStorage.removeItem('sr_admin_token');
+      sessionStorage.removeItem('sr_admin');
+      localStorage.removeItem('sr_admin_mode');
+    },
+    isAuthenticated() {
+      return Boolean(sessionStorage.getItem('sr_admin_token'));
+    },
     onChange: fn => listeners.push(fn),
     sync: syncFromPython,
     reload() { data = readCache(); },
