@@ -90,28 +90,46 @@ const SRDB = (() => {
   // Real-time zero-delay BroadcastChannel for instant cross-tab live sync
   const liveChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('sr_live_sync_bus') : null;
 
-  function writeCache(broadcast = true) {
+  // Version registry to detect real changes without refetching unchanged tables
+  const VERSION_STORAGE_KEY = 'srdb_sync_versions_v1';
+  let localVersions = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(VERSION_STORAGE_KEY)) || {};
+    } catch (e) {
+      return {};
+    }
+  })();
+
+  function saveVersions() {
+    try {
+      localStorage.setItem(VERSION_STORAGE_KEY, JSON.stringify(localVersions));
+    } catch (e) {}
+  }
+
+  function writeCache(broadcast = true, detail = {}) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {}
-    notifyListeners();
+    notifyListeners(detail);
     if (broadcast && liveChannel) {
-      try { liveChannel.postMessage({ type: 'SYNC', at: Date.now() }); } catch (err) {}
+      try { liveChannel.postMessage({ type: 'SYNC', at: Date.now(), detail }); } catch (err) {}
     }
   }
 
   const listeners = [];
-  function notifyListeners() {
+  function notifyListeners(detail = {}) {
     listeners.forEach(fn => {
-      try { fn(); } catch (err) { console.error('Listener error:', err); }
+      try { fn(detail); } catch (err) { console.error('Listener error:', err); }
     });
   }
 
   // Cross-tab broadcast listener
   if (liveChannel) {
-    liveChannel.onmessage = () => {
+    liveChannel.onmessage = e => {
+      const msg = e.data || {};
       data = readCache();
-      notifyListeners();
+      try { localVersions = JSON.parse(localStorage.getItem(VERSION_STORAGE_KEY)) || localVersions; } catch (err) {}
+      notifyListeners(msg.detail || {});
     };
   }
 
@@ -119,7 +137,8 @@ const SRDB = (() => {
   window.addEventListener('storage', e => {
     if (e.key === STORAGE_KEY) {
       data = readCache();
-      notifyListeners();
+      try { localVersions = JSON.parse(localStorage.getItem(VERSION_STORAGE_KEY)) || localVersions; } catch (err) {}
+      notifyListeners({ storageEvent: true });
     }
   });
 
@@ -146,13 +165,115 @@ const SRDB = (() => {
       }
       return await res.json();
     } catch (e) {
-      console.warn(`Python API [${path}] error or offline, fallback to local:`, e.message);
       return null;
     }
   }
 
-  // Initial full fetch from Python backend
-  async function syncFromPython() {
+  let isSyncing = false;
+  let initialSynced = false;
+
+  // Smart Delta Sync from Python backend:
+  // Pings lightweight /api/sync/status (<1ms) and only fetches updated resources!
+  async function syncFromPython(forceAll = false) {
+    if (isSyncing) return;
+    isSyncing = true;
+    try {
+      const statusRes = await api('/api/sync/status');
+      if (!statusRes || !statusRes.ok || !statusRes.versions) {
+        if (!initialSynced || forceAll) {
+          await fullSyncFromPython();
+          initialSynced = true;
+        }
+        return;
+      }
+
+      const serverV = statusRes.versions;
+      const meta = statusRes.meta || {};
+
+      if (!initialSynced || forceAll) {
+        await fullSyncFromPython(serverV, meta);
+        initialSynced = true;
+        return;
+      }
+
+      const needSettings = serverV.settings !== localVersions.settings;
+      const needCategories = serverV.categories !== localVersions.categories;
+      const needProducts = serverV.products !== localVersions.products;
+      const needCharms = serverV.charms !== localVersions.charms;
+      const needOrders = serverV.orders !== localVersions.orders;
+      const needUsers = serverV.users !== localVersions.users;
+      const needNotifs = serverV.notifications !== localVersions.notifications;
+
+      const anyNeeded = needSettings || needCategories || needProducts || needCharms || needOrders || needUsers || needNotifs;
+      if (!anyNeeded) {
+        // Zero server payload, zero re-renders!
+        return;
+      }
+
+      const fetches = [];
+      if (needSettings) fetches.push(api('/api/settings').then(res => ({ type: 'settings', res })));
+      if (needCategories) fetches.push(api('/api/categories').then(res => ({ type: 'categories', res })));
+      if (needProducts) fetches.push(api('/api/products?all=1').then(res => ({ type: 'products', res })));
+      if (needCharms) fetches.push(api('/api/charms?all=1').then(res => ({ type: 'charms', res })));
+      if (needOrders) fetches.push(api('/api/orders').then(res => ({ type: 'orders', res })));
+      if (needUsers) fetches.push(api('/api/users').then(res => ({ type: 'users', res })));
+      if (needNotifs) fetches.push(api('/api/notifications').then(res => ({ type: 'notifications', res })));
+
+      const results = await Promise.all(fetches);
+      let changedMap = {};
+
+      results.forEach(({ type, res }) => {
+        if (!res) return;
+        if (type === 'settings') {
+          data.settings = {
+            ...data.settings,
+            ...res,
+            siteTitle: res.site_title || res.siteTitle || data.settings.siteTitle,
+            siteLogo: res.site_logo || res.siteLogo || data.settings.siteLogo || 'logo.jpg',
+            adminPin: res.admin_pin || res.adminPin || data.settings.adminPin,
+            deliveryFee: res.delivery_fee !== undefined ? res.delivery_fee : data.settings.deliveryFee,
+            voucherCost: res.voucher_cost !== undefined ? res.voucher_cost : data.settings.voucherCost,
+            voucherPct: res.voucher_pct !== undefined ? res.voucher_pct : data.settings.voucherPct,
+            customBasePrice: res.custom_base_price !== undefined ? res.custom_base_price : data.settings.customBasePrice,
+            charmPrice: res.charm_price !== undefined ? res.charm_price : data.settings.charmPrice,
+            customPremiumPkg: res.custom_premium_pkg !== undefined ? res.custom_premium_pkg : (data.settings.customPremiumPkg || 0.5),
+            customPt: res.custom_pt !== undefined ? res.custom_pt : data.settings.customPt,
+          };
+          changedMap.settings = true;
+        } else if (type === 'categories' && Array.isArray(res) && res.length) {
+          data.categories = res;
+          changedMap.categories = true;
+        } else if (type === 'products' && Array.isArray(res)) {
+          data.products = res;
+          changedMap.products = true;
+        } else if (type === 'charms' && Array.isArray(res)) {
+          data.charms = res;
+          changedMap.charms = true;
+        } else if (type === 'orders' && Array.isArray(res)) {
+          data.orders = res;
+          changedMap.orders = true;
+        } else if (type === 'users' && Array.isArray(res)) {
+          data.users = res;
+          changedMap.users = true;
+        } else if (type === 'notifications' && Array.isArray(res)) {
+          data.notifications = res;
+          changedMap.notifications = true;
+        }
+      });
+
+      if (Object.keys(changedMap).length > 0) {
+        localVersions = { ...localVersions, ...serverV };
+        saveVersions();
+        writeCache(true, { changed: changedMap, meta });
+      }
+    } catch (e) {
+      console.warn('Sync check error:', e);
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  async function fullSyncFromPython(serverV = null, meta = {}) {
     const [st, cats, pr, ch, ord, usr, notif] = await Promise.all([
       api('/api/settings'),
       api('/api/categories'),
@@ -165,7 +286,6 @@ const SRDB = (() => {
 
     let changed = false;
     if (st) {
-      // Normalize both snake_case and camelCase
       data.settings = {
         ...data.settings,
         ...st,
@@ -189,12 +309,37 @@ const SRDB = (() => {
     if (Array.isArray(usr)) { data.users = usr; changed = true; }
     if (Array.isArray(notif)) { data.notifications = notif; changed = true; }
 
-    if (changed) writeCache(false);
+    if (serverV) {
+      localVersions = { ...localVersions, ...serverV };
+      saveVersions();
+    }
+    if (changed) {
+      writeCache(false, { initial: true, meta });
+    }
   }
 
-  // Poll Python server every 2.5 seconds for live order & status synchronization
-  setInterval(syncFromPython, 2500);
-  setTimeout(syncFromPython, 50);
+  // Adaptive polling interval: 3 seconds when active, 12 seconds when hidden in background
+  let pollTimer = null;
+  function scheduleNextPoll() {
+    clearTimeout(pollTimer);
+    const delay = document.hidden ? 12000 : 3000;
+    pollTimer = setTimeout(async () => {
+      await syncFromPython();
+      scheduleNextPoll();
+    }, delay);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      syncFromPython();
+      scheduleNextPoll();
+    }
+  });
+
+  setTimeout(() => {
+    syncFromPython(true);
+    scheduleNextPoll();
+  }, 40);
 
   return {
     onChange: fn => listeners.push(fn),

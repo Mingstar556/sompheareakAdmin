@@ -41,19 +41,44 @@ $('#modal').addEventListener('click', e => {
   if (e.target.id === 'modal') closeModal();
 });
 
+let _sharedAudioCtx = null;
+function getSharedAudioContext() {
+  if (!_sharedAudioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      _sharedAudioCtx = new AudioContextClass();
+    }
+  }
+  if (_sharedAudioCtx && _sharedAudioCtx.state === 'suspended') {
+    _sharedAudioCtx.resume().catch(() => {});
+  }
+  return _sharedAudioCtx;
+}
+
+['click', 'keydown', 'touchstart'].forEach(evt => {
+  window.addEventListener(evt, () => {
+    if (_sharedAudioCtx && _sharedAudioCtx.state === 'suspended') {
+      _sharedAudioCtx.resume().catch(() => {});
+    }
+  }, { once: true, passive: true });
+});
+
 function playNotificationSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-    osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.12);
-    gain.gain.setValueAtTime(0.2, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.4);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, now);
+    osc.frequency.setValueAtTime(659.25, now + 0.12);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    osc.start(now);
+    osc.stop(now + 0.4);
   } catch (e) {}
 }
 
@@ -342,13 +367,55 @@ function showPendingOrders() {
   render();
 }
 
+// Fast in-place badge and document title updater without full DOM rebuild
+function updatePendingBadges(curPending) {
+  const bellBadge = $('#adminPendingCount');
+  if (bellBadge) {
+    if (curPending > 0) {
+      bellBadge.textContent = curPending;
+      bellBadge.classList.remove('hidden');
+    } else {
+      bellBadge.classList.add('hidden');
+    }
+  }
+  if (curPending > 0) {
+    document.title = `(${curPending}) New Orders! • Somphea Reak Admin`;
+  } else {
+    document.title = 'Admin Panel | Somphea Reak';
+  }
+  // Fast update for sidebar order badge
+  const sideOrderBtn = document.querySelector('#side button:nth-child(2)');
+  if (sideOrderBtn && tab !== 'orders') {
+    let badgeSpan = sideOrderBtn.querySelector('.pending-pulse');
+    if (curPending > 0) {
+      if (!badgeSpan) {
+        badgeSpan = document.createElement('span');
+        badgeSpan.className = 'badge pending-pulse';
+        badgeSpan.style.position = 'static';
+        sideOrderBtn.appendChild(badgeSpan);
+      }
+      badgeSpan.textContent = `${curPending} PENDING`;
+    } else if (badgeSpan) {
+      badgeSpan.remove();
+    }
+  }
+}
+
 // Background sync from Python server with audio & visual alert
 let lastPendingCount = SRDB.orders().filter(o => o.status === 'Pending').length;
 let lastUnread = SRDB.unread();
-SRDB.onChange(() => {
-  applyLogo();
-  const curPending = SRDB.orders().filter(o => o.status === 'Pending').length;
-  const curUnread = SRDB.unread();
+
+SRDB.onChange((detail = {}) => {
+  const changed = detail.changed || {};
+  const meta = detail.meta || {};
+
+  const curPending = (meta.pending_orders !== undefined)
+    ? meta.pending_orders
+    : SRDB.orders().filter(o => o.status === 'Pending').length;
+
+  const curUnread = (meta.unread_notifs !== undefined)
+    ? meta.unread_notifs
+    : SRDB.unread();
 
   if (curPending > lastPendingCount) {
     playNotificationSound();
@@ -360,8 +427,34 @@ SRDB.onChange(() => {
   lastPendingCount = curPending;
   lastUnread = curUnread;
 
-  // Crucial fix: NEVER re-render while the user has an input focused or is editing settings
-  if (!document.activeElement.matches('input,select,textarea') && $('#modal').classList.contains('hidden') && tab !== 'settings') {
+  // Always keep badges updated instantly with zero DOM lag
+  updatePendingBadges(curPending);
+
+  if (changed.settings) {
+    applyLogo();
+  }
+
+  // Never disrupt active input editing or open modal
+  const isEditing = Boolean(document.activeElement && document.activeElement.matches('input,select,textarea'));
+  const isModalOpen = !$('#modal').classList.contains('hidden');
+  if (isEditing || isModalOpen || tab === 'settings') {
+    return;
+  }
+
+  // Only re-render if the currently displayed tab is affected by the changed data
+  const shouldRerender =
+    detail.initial ||
+    !detail.changed ||
+    (tab === 'dashboard' && (changed.orders || changed.products || changed.notifications)) ||
+    (tab === 'orders' && changed.orders) ||
+    (tab === 'products' && changed.products) ||
+    (tab === 'charms' && changed.charms) ||
+    (tab === 'categories' && changed.categories) ||
+    (tab === 'users' && changed.users) ||
+    (tab === 'vouchers' && changed.users) ||
+    (tab === 'notifications' && changed.notifications);
+
+  if (shouldRerender) {
     render();
   }
 });
