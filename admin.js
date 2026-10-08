@@ -185,6 +185,22 @@ $('#togglePinVis').onclick = () => {
   pinInput.type = pinInput.type === 'password' ? 'text' : 'password';
 };
 
+// Display active API Server address and allow quick reconfiguration
+const apiDisplayEl = $('#apiEndpointDisplay');
+if (apiDisplayEl && window.SR_CONFIG) {
+  apiDisplayEl.textContent = window.SR_CONFIG.API_BASE || '(Same Origin)';
+}
+const changeApiBtn = $('#changeApiBtn');
+if (changeApiBtn && window.SR_CONFIG) {
+  changeApiBtn.onclick = () => {
+    const current = window.SR_CONFIG.API_BASE || '';
+    const updated = prompt('Enter Backend API Server URL (e.g. http://192.168.1.11:5000 or https://sompheareak.com):', current);
+    if (updated !== null) {
+      window.SR_CONFIG.setApiBase(updated);
+    }
+  };
+}
+
 $('#pinBtn').onclick = async () => {
   const val = pinInput.value.trim();
   if (!val) {

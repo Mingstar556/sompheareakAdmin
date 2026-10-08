@@ -50,6 +50,13 @@
         <div style="text-align:center;margin-top:10px">
           <a href="#" onclick="window.open(window.SR_CONFIG ? window.SR_CONFIG.STOREFRONT_URL : 'http://127.0.0.1:5000', '_blank'); return false;" class="muted small" style="text-decoration:underline;display:inline-flex;align-items:center;gap:4px">🛍️ Open Customer Storefront ↗</a>
         </div>
+        <div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:0.75rem;color:var(--muted)">
+          <div style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
+            <span>API Server:</span>
+            <code id="apiEndpointDisplay" style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;color:var(--text)"></code>
+            <button type="button" id="changeApiBtn" class="btn sm ghost" style="padding:2px 8px;font-size:0.7rem;height:auto;line-height:1.2" title="Change Backend API Address">Change</button>
+          </div>
+        </div>
       </div>
     </div>
   </section>

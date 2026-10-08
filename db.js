@@ -143,9 +143,16 @@ const SRDB = (() => {
   });
 
   // Base API caller connecting to Python Flask backend
+  // Base API caller connecting to Python Flask backend
   const API_BASE = (window.SR_CONFIG && window.SR_CONFIG.API_BASE !== undefined)
     ? window.SR_CONFIG.API_BASE
-    : (localStorage.getItem('sr_api_base') || (window.location.port === '5000' ? '' : 'http://127.0.0.1:5000'));
+    : (localStorage.getItem('sr_api_base') || (
+        window.location.port === '5000'
+          ? ''
+          : ((window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+              ? `${window.location.protocol}//${window.location.hostname}:5000`
+              : 'http://127.0.0.1:5000')
+      ));
 
   async function api(path, opts = {}) {
     try {
@@ -159,6 +166,7 @@ const SRDB = (() => {
         ...opts,
         headers,
       });
+      const ctype = res.headers.get('content-type') || '';
       if (!res.ok) {
         if (res.status === 401 && sessionStorage.getItem('sr_admin') === '1') {
           // Token expired or invalid - clear session and re-gate
@@ -167,10 +175,16 @@ const SRDB = (() => {
           localStorage.removeItem('sr_admin_mode');
           location.reload();
         }
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || `HTTP ${res.status}`);
+        let errBody = {};
+        if (ctype.includes('application/json')) {
+          errBody = await res.json().catch(() => ({}));
+        }
+        throw new Error(errBody.error || `HTTP ${res.status}`);
       }
-      return await res.json();
+      if (ctype.includes('application/json')) {
+        return await res.json();
+      }
+      return null;
     } catch (e) {
       return null;
     }
@@ -179,12 +193,26 @@ const SRDB = (() => {
   // Token exchange authentication against /api/auth/exchange
   async function login(pin) {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/exchange`, {
+      const endpoint = `${API_BASE}/api/auth/exchange`;
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: String(pin).trim() })
       });
-      const data = await res.json();
+      const ctype = res.headers.get('content-type') || '';
+      let data = null;
+      if (ctype.includes('application/json')) {
+        data = await res.json().catch(() => null);
+      } else {
+        const text = await res.text().catch(() => '');
+        return {
+          ok: false,
+          error: `Backend server at ${API_BASE || 'current origin'} returned HTML (${res.status}). Ensure Python server.py is running on port 5000.`
+        };
+      }
+      if (!data) {
+        return { ok: false, error: 'Empty or invalid JSON response from server' };
+      }
       if (res.ok && data.ok && data.token) {
         sessionStorage.setItem('sr_admin_token', data.token);
         sessionStorage.setItem('sr_admin', '1');
@@ -193,7 +221,12 @@ const SRDB = (() => {
       }
       return { ok: false, error: data.error || 'Invalid credentials' };
     } catch (err) {
-      return { ok: false, error: err.message || 'Connection error' };
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      let msg = err.message || 'Connection error';
+      if (msg.toLowerCase().includes('failed to fetch')) {
+        msg = `Cannot connect to API server at ${API_BASE}. ${isMobile ? 'On mobile, ensure you are on the same Wi-Fi and python server.py is running on your PC (port 5000).' : 'Please ensure python server.py is running on port 5000.'}`;
+      }
+      return { ok: false, error: msg };
     }
   }
 
