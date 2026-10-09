@@ -220,27 +220,32 @@ $('#pinBtn').onclick = async () => {
   $('#pinBtn').disabled = true;
   $('#pinBtn').textContent = 'Verifying...';
 
-  const res = await SRDB.login(val);
-  $('#pinBtn').disabled = false;
-  $('#pinBtn').textContent = 'Login to Dashboard';
-
-  if (res.ok) {
-    $('#pinErr').classList.add('hidden');
-    const isRemember = adminRememberEl ? adminRememberEl.checked : (localStorage.getItem('sr_admin_remember') !== 'false');
-    if (isRemember && res.data && res.data.token) {
-      localStorage.setItem('sr_admin_token', res.data.token);
-      localStorage.setItem('sr_admin', '1');
-      localStorage.setItem('sr_admin_remember', 'true');
+  try {
+    const res = await SRDB.login(val);
+    if (res && res.ok) {
+      $('#pinErr').classList.add('hidden');
+      const isRemember = adminRememberEl ? adminRememberEl.checked : (localStorage.getItem('sr_admin_remember') !== 'false');
+      if (isRemember && res.data && res.data.token) {
+        localStorage.setItem('sr_admin_token', res.data.token);
+        localStorage.setItem('sr_admin', '1');
+        localStorage.setItem('sr_admin_remember', 'true');
+      } else {
+        localStorage.removeItem('sr_admin_token');
+        localStorage.removeItem('sr_admin');
+        localStorage.setItem('sr_admin_remember', 'false');
+      }
+      enter();
     } else {
-      localStorage.removeItem('sr_admin_token');
-      localStorage.removeItem('sr_admin');
-      localStorage.setItem('sr_admin_remember', 'false');
+      $('#pinErr').textContent = (res && res.error) || 'Invalid Admin PIN';
+      $('#pinErr').classList.remove('hidden');
+      pinInput.select();
     }
-    enter();
-  } else {
-    $('#pinErr').textContent = res.error || 'Invalid Admin PIN';
+  } catch (err) {
+    $('#pinErr').textContent = 'Login failed. Please check backend connection.';
     $('#pinErr').classList.remove('hidden');
-    pinInput.select();
+  } finally {
+    $('#pinBtn').disabled = false;
+    $('#pinBtn').textContent = 'Login to Dashboard';
   }
 };
 
@@ -273,6 +278,7 @@ function clearOrderSearch() {
 
 const TABS = [
   ['dashboard', '📊 Dashboard'],
+  ['storefront', '👑 Customer Shop (Live Edit)'],
   ['orders', '🧾 Orders & Receipts'],
   ['products', '🛍️ Products & Prices'],
   ['categories', '🏷️ Categories'],
@@ -333,7 +339,7 @@ function render() {
   });
   const ambMore = $('#ambTabMore');
   if (ambMore) {
-    ambMore.classList.toggle('active', ['charms', 'customers', 'settings', 'database'].includes(tab));
+    ambMore.classList.toggle('active', ['storefront', 'charms', 'customers', 'settings', 'database'].includes(tab));
   }
   const ambOrdersBadge = $('#ambOrdersBadge');
   if (ambOrdersBadge) {
@@ -345,7 +351,7 @@ function render() {
     }
   }
 
-  ({ dashboard, orders, products, categories, charms, customers, settings, database })[tab]();
+  ({ dashboard, storefront, orders, products, categories, charms, customers, settings, database })[tab]();
 }
 
 function switchAdminTab(tName) {
@@ -378,11 +384,11 @@ function openAdminMoreSheet() {
       <button class="btn ghost" style="justify-content:flex-start;padding:12px 14px;border-radius:10px;font-size:0.95rem" onclick="playNotificationSound();toast('🔔 Chime sound played! Audio enabled.')">
         🔊 <b>Test Order Notification Alert Sound</b>
       </button>
-      <button class="btn primary" style="justify-content:flex-start;padding:12px 14px;border-radius:10px;font-size:0.95rem" onclick="closeModal();launchFrontAdminMode()">
-        👑 <b>Launch Front Storefront in Edit Mode</b>
+      <button class="btn primary" style="justify-content:flex-start;padding:12px 14px;border-radius:10px;font-size:0.95rem" onclick="closeModal();switchAdminTab('storefront')">
+        👑 <b>Customer Shop (Live Visual Editor)</b>
       </button>
-      <a href="index.html" class="btn ghost" style="justify-content:flex-start;padding:12px 14px;border-radius:10px;font-size:0.95rem;text-decoration:none">
-        🛒 <b>View Customer Storefront (Normal)</b>
+      <a href="#" onclick="closeModal();window.open(window.SR_CONFIG ? window.SR_CONFIG.STOREFRONT_URL : 'http://127.0.0.1:5000', '_blank');return false;" class="btn ghost" style="justify-content:flex-start;padding:12px 14px;border-radius:10px;font-size:0.95rem;text-decoration:none">
+        🛒 <b>View Customer Storefront (Normal) ↗</b>
       </a>
       <button class="btn danger sm" style="margin-top:10px;justify-content:center" onclick="closeModal();logoutAdmin()">
         ⏻ Log out from Admin Panel
@@ -503,15 +509,16 @@ SRDB.onChange((detail = {}) => {
 });
 
 function launchFrontAdminMode() {
-  sessionStorage.setItem('sr_front_edit_authorized', '1');
-  localStorage.setItem('sr_front_edit_authorized', '1');
-  sessionStorage.setItem('sr_admin', '1');
-  toast('🚀 Opening Customer Storefront in Admin Edit Mode...');
-  if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 768) {
-    setTimeout(() => { location.href = 'index.html?admin_edit=1'; }, 300);
-  } else {
-    window.open('index.html?admin_edit=1', '_blank');
+  const isAuth = sessionStorage.getItem('sr_admin') || localStorage.getItem('sr_admin');
+  if (!isAuth) {
+    toast('🔒 Please enter Admin PIN to log in before accessing Customer Shop Edit Mode.');
+    const pinInput = $('#pin');
+    if (pinInput) pinInput.focus();
+    return;
   }
+  sfEditMode = true;
+  switchAdminTab('storefront');
+  toast('👑 Switched to Customer Shop Live Edit Mode');
 }
 
 /* ================================================================
@@ -538,8 +545,8 @@ function dashboard() {
   ${pendingBannerHtml}
   <div class="glass panel" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;background:linear-gradient(135deg,rgba(16,185,129,0.14),rgba(6,182,212,0.09));border:1px solid rgba(16,185,129,0.35);margin-bottom:18px">
     <div>
-      <h3 style="color:#10b981;display:flex;align-items:center;gap:8px">👑 Storefront Admin Edit Mode</h3>
-      <p class="muted small" style="margin-top:2px">Go to the live customer front with administrative tools enabled to edit prices, stock, and categories directly on the page.</p>
+      <h3 style="color:#10b981;display:flex;align-items:center;gap:8px">👑 Storefront Admin Live Editor</h3>
+      <p class="muted small" style="margin-top:2px">Manage products, stock, categories, charms, announcement, and site branding directly on the live customer shop layout.</p>
     </div>
     <button class="btn primary" onclick="launchFrontAdminMode()">🚀 Open Customer Shop in Admin Edit Mode</button>
   </div>
@@ -596,6 +603,460 @@ function dashboard() {
         </div>`).join('')
       : '<p class="muted" style="padding:16px 0">All inventory levels are healthy! 👍</p>'}
     </div>
+  </div>`;
+}
+
+/* ================================================================
+   1.5 Customer Storefront (Live Visual Editor)
+   ================================================================ */
+let sfDevice = 'mobile';
+let sfEditMode = true;
+let sfCategory = 'all';
+let sfSearch = '';
+
+function setSfDevice(dev) {
+  sfDevice = dev;
+  render();
+}
+
+function toggleSfEditMode(enabled) {
+  sfEditMode = enabled;
+  render();
+}
+
+function setSfCategory(catId) {
+  sfCategory = catId;
+  render();
+}
+
+function onSfSearchChange(q) {
+  sfSearch = (q || '').trim();
+  const grid = $('#sfProdGrid');
+  if (grid) {
+    const P = SRDB.products(true);
+    let displayProds = P;
+    if (sfCategory !== 'all') {
+      displayProds = displayProds.filter(p => (p.cat || '').toLowerCase() === sfCategory.toLowerCase());
+    }
+    if (sfSearch) {
+      const query = sfSearch.toLowerCase();
+      displayProds = displayProds.filter(p => (p.name || '').toLowerCase().includes(query));
+    }
+    const countEl = $('#sfProdCount');
+    if (countEl) countEl.textContent = `${displayProds.length} products found`;
+    grid.innerHTML = displayProds.length === 0 ? `
+      <div style="grid-column:1/-1;text-align:center;padding:30px 10px;color:var(--muted)">
+        <p>No products match "${esc(sfSearch)}".</p>
+        ${sfEditMode ? `<button class="btn primary sm" onclick="editProduct()">+ Add Product</button>` : ''}
+      </div>` : displayProds.map(p => renderSfProductCard(p, sfEditMode)).join('');
+  }
+}
+
+function renderSfProductCard(p, isEdit) {
+  const finalPrice = SRDB.finalPrice ? SRDB.finalPrice(p) : +(p.price * (1 - (p.discount || 0)/100)).toFixed(2);
+  const isOut = (p.stock || 0) <= 0;
+  return `
+  <div class="sf-prod-card ${isOut ? 'out-of-stock' : ''}" data-id="${esc(p.id)}">
+    <div class="sf-card-media" onclick="${isEdit ? `editProduct('${esc(p.id)}')` : ''}">
+      ${p.image ? `<img src="${esc(p.image)}" alt="${esc(p.name)}" onerror="this.src='logo.jpg'" loading="lazy">` : `<div class="sf-card-placeholder">🛍️</div>`}
+      ${p.discount > 0 ? `<span class="sf-disc-badge">-${p.discount}%</span>` : ''}
+      ${isOut ? `<span class="sf-out-badge">OUT OF STOCK</span>` : ''}
+    </div>
+    <div class="sf-card-body" onclick="${isEdit ? `editProduct('${esc(p.id)}')` : ''}">
+      <div class="sf-card-cat">${esc(p.cat || 'General')}</div>
+      <div class="sf-card-title">${esc(p.name)}</div>
+      <div class="sf-card-price-row">
+        <span class="sf-card-price">${money(finalPrice)}</span>
+        ${p.discount > 0 ? `<span class="sf-card-old-price">${money(p.price)}</span>` : ''}
+      </div>
+      <div class="sf-card-stock-line">
+        Stock: <b style="color:${isOut ? '#ef4444' : '#10b981'}">${p.stock || 0} left</b>
+      </div>
+    </div>
+    ${isEdit ? `
+    <div class="sf-card-admin-bar">
+      <div class="sf-stock-stepper" title="Quick Adjust Stock">
+        <button type="button" onclick="inlineAdjustStock('${esc(p.id)}', -1);render()">−</button>
+        <span>${p.stock || 0}</span>
+        <button type="button" onclick="inlineAdjustStock('${esc(p.id)}', 1);render()">+</button>
+      </div>
+      <div class="sf-card-btns">
+        <button type="button" class="sf-btn-edit" onclick="editProduct('${esc(p.id)}')" title="Edit details">✏️ Edit</button>
+        <button type="button" class="sf-btn-del" onclick="deleteProd('${esc(p.id)}', '${esc(p.name).replace(/'/g, '')}')" title="Delete">🗑️</button>
+      </div>
+    </div>` : `
+    <div class="sf-card-customer-action">
+      <button class="sf-card-add-cart-btn" disabled>Add to Cart 🛒</button>
+    </div>`}
+  </div>`;
+}
+
+function renderSfCharmCard(ch, isEdit) {
+  const isOut = (ch.stock || 0) <= 0;
+  return `
+  <div class="sf-charm-card ${isOut ? 'out-of-stock' : ''}">
+    <div class="sf-charm-media">
+      <img src="${esc(ch.image || 'charm_clean.png')}" alt="${esc(ch.name)}" onerror="this.src='charm_clean.png'" loading="lazy">
+      ${isOut ? `<span class="sf-out-badge">OUT</span>` : ''}
+    </div>
+    <div class="sf-charm-body">
+      <div class="sf-charm-code">${esc(ch.model_no || ch.id)}</div>
+      <div class="sf-charm-name" title="${esc(ch.name)}">${esc(ch.name)}</div>
+      <div class="sf-charm-price">${money(ch.price || 0.75)} / ៛${ch.price_khr || 3000}</div>
+    </div>
+    ${isEdit ? `
+    <div class="sf-charm-admin-bar">
+      <div class="sf-stock-stepper">
+        <button type="button" onclick="quickAdjustCharmStock('${esc(ch.id)}', -1)">−</button>
+        <span>${ch.stock || 0}</span>
+        <button type="button" onclick="quickAdjustCharmStock('${esc(ch.id)}', 1)">+</button>
+      </div>
+      <div class="sf-card-btns">
+        <button type="button" class="sf-btn-edit" onclick="editCharm('${esc(ch.id)}')">✏️</button>
+        <button type="button" class="sf-btn-del" onclick="deleteCharm('${esc(ch.id)}', '${esc(ch.name).replace(/'/g, '')}')">🗑️</button>
+      </div>
+    </div>` : `
+    <div class="sf-charm-stock-badge">
+      ${ch.stock > 0 ? `${ch.stock} in stock` : '<span style="color:#ef4444">Out of stock</span>'}
+    </div>`}
+  </div>`;
+}
+
+function editStorefrontAnnouncement() {
+  const s = SRDB.settings();
+  const currentText = s.announcementText || '🚚 Free delivery on orders over $25 | 🎁 New Charms in stock!';
+  const currentEnabled = s.announcementEnabled !== false;
+  
+  modal(`
+  <div style="text-align:left">
+    <div class="section-title" style="margin-top:0">
+      <div>
+        <h3>📢 Edit Storefront Announcement Bar</h3>
+        <p class="muted small">Shown at the top of the customer shop</p>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <label>Announcement Message</label>
+      <input type="text" id="sfAnnText" value="${esc(currentText)}" style="width:100%;margin-top:4px">
+    </div>
+    <div style="margin-top:14px;display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="sfAnnEnabled" ${currentEnabled ? 'checked' : ''} style="width:18px;height:18px">
+      <label for="sfAnnEnabled" style="margin:0;cursor:pointer">Show Announcement Bar on Customer Front</label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveStorefrontAnnouncement()">Save Announcement 💾</button>
+    </div>
+  </div>`);
+}
+
+async function saveStorefrontAnnouncement() {
+  const text = $('#sfAnnText')?.value?.trim() || '';
+  const enabled = $('#sfAnnEnabled')?.checked ?? true;
+  await SRDB.saveSettings({
+    announcementText: text,
+    announcementEnabled: enabled
+  });
+  closeModal();
+  toast('Announcement bar updated!');
+  render();
+}
+
+function editStorefrontBrand() {
+  const s = SRDB.settings();
+  modal(`
+  <div style="text-align:left">
+    <div class="section-title" style="margin-top:0">
+      <div>
+        <h3>🎨 Edit Store Brand & Logo</h3>
+        <p class="muted small">Customize store title and customer front presentation</p>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <label>Store Name / Title</label>
+      <input type="text" id="sfBrandTitle" value="${esc(s.siteTitle || 'Somphea Reak')}" style="width:100%;margin-top:4px">
+    </div>
+    <div style="margin-top:12px">
+      <label>Store Logo Image URL</label>
+      <input type="text" id="sfBrandLogo" value="${esc(s.siteLogo || 'logo.jpg')}" style="width:100%;margin-top:4px">
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveStorefrontBrand()">Save Brand 💾</button>
+    </div>
+  </div>`);
+}
+
+async function saveStorefrontBrand() {
+  const siteTitle = $('#sfBrandTitle')?.value?.trim() || 'Somphea Reak';
+  const siteLogo = $('#sfBrandLogo')?.value?.trim() || 'logo.jpg';
+  await SRDB.saveSettings({ siteTitle, siteLogo });
+  closeModal();
+  toast('Store branding updated!');
+  render();
+}
+
+function editStorefrontDeliveryRules() {
+  const s = SRDB.settings();
+  modal(`
+  <div style="text-align:left">
+    <div class="section-title" style="margin-top:0">
+      <div>
+        <h3>🚚 Edit Delivery & Payment Rules</h3>
+        <p class="muted small">Customer checkout settings</p>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <label>Standard Delivery Fee ($)</label>
+      <input type="number" step="0.25" id="sfDeliveryFee" value="${s.deliveryFee !== undefined ? s.deliveryFee : 1.5}" style="width:100%;margin-top:4px">
+    </div>
+    <div style="margin-top:12px">
+      <label>Free Delivery Threshold ($) (0 to disable)</label>
+      <input type="number" step="1" id="sfFreeDelivery" value="${s.freeDeliveryThreshold !== undefined ? s.freeDeliveryThreshold : 25}" style="width:100%;margin-top:4px">
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveStorefrontDeliveryRules()">Save Rules 💾</button>
+    </div>
+  </div>`);
+}
+
+async function saveStorefrontDeliveryRules() {
+  const deliveryFee = parseFloat($('#sfDeliveryFee')?.value) || 0;
+  const freeDeliveryThreshold = parseFloat($('#sfFreeDelivery')?.value) || 0;
+  await SRDB.saveSettings({ deliveryFee, freeDeliveryThreshold });
+  closeModal();
+  toast('Checkout rules updated!');
+  render();
+}
+
+function storefront() {
+  const P = SRDB.products(true);
+  const C = SRDB.categories();
+  const Ch = SRDB.charms(true);
+  const S = SRDB.settings();
+
+  let displayProds = P;
+  if (sfCategory !== 'all') {
+    displayProds = displayProds.filter(p => (p.cat || '').toLowerCase() === sfCategory.toLowerCase());
+  }
+  if (sfSearch) {
+    const q = sfSearch.toLowerCase();
+    displayProds = displayProds.filter(p => (p.name || '').toLowerCase().includes(q));
+  }
+
+  const announcementText = S.announcementText || '🚚 Free delivery on orders over $25 | 🎁 New Italy Charms in stock!';
+  const announcementEnabled = S.announcementEnabled !== false;
+  const brandTitle = S.siteTitle || 'Somphea Reak';
+  const brandLogo = S.siteLogo || 'logo.jpg';
+  const rawStoreUrl = (window.SR_CONFIG && window.SR_CONFIG.STOREFRONT_URL) ? window.SR_CONFIG.STOREFRONT_URL : 'http://127.0.0.1:5000';
+
+  const innerStorefrontHtml = `
+    <!-- Top Announcement Bar -->
+    ${announcementEnabled ? `
+      <div class="sf-announcement-bar">
+        <span>${esc(announcementText)}</span>
+        ${sfEditMode ? `
+          <button class="sf-mini-edit-btn" onclick="editStorefrontAnnouncement()" title="Edit announcement text">
+            ✏️ Edit
+          </button>` : ''}
+      </div>` : ''}
+
+    <!-- Storefront Header -->
+    <header class="sf-store-header">
+      <div class="sf-header-brand">
+        <img src="${esc(brandLogo)}" alt="Logo" class="sf-store-logo" onerror="this.src='logo.jpg'">
+        <div>
+          <h1 class="sf-store-name">${esc(brandTitle)}</h1>
+          <span class="sf-store-tag">Official Store</span>
+        </div>
+        ${sfEditMode ? `
+          <button class="sf-mini-edit-btn" onclick="editStorefrontBrand()" title="Edit store branding">
+            ✏️ Brand
+          </button>` : ''}
+      </div>
+      <div class="sf-header-search">
+        <input type="text" placeholder="🔍 Search products..." value="${esc(sfSearch)}" oninput="onSfSearchChange(this.value)">
+      </div>
+    </header>
+
+    <!-- Hero Promotional Banner -->
+    <div class="sf-hero-banner">
+      <span class="badge" style="background:#10b981;color:#fff;font-weight:700">HANDCRAFTED & LUXURY</span>
+      <h2>Minifigures, Toys & Italy Charm Bracelets</h2>
+      <p class="small muted" style="margin:4px 0 0">Build your modular stainless steel bracelet or explore collectible figures</p>
+    </div>
+
+    <!-- Category Strip -->
+    <div class="sf-cat-section">
+      <div class="sf-cat-header">
+        <h3 style="margin:0;font-size:1.05rem">Shop by Category</h3>
+        ${sfEditMode ? `
+          <button class="btn sm ghost" onclick="editCategory()" style="padding:3px 10px;font-size:0.75rem">
+            ➕ Add Category
+          </button>` : ''}
+      </div>
+      <div class="sf-cat-row">
+        <div class="sf-cat-chip-wrap">
+          <button class="sf-cat-chip ${sfCategory === 'all' ? 'active' : ''}" onclick="setSfCategory('all')">
+            ✨ All Items (${P.length})
+          </button>
+        </div>
+        ${C.map(c => {
+          const count = P.filter(p => (p.cat || '').toLowerCase() === (c.id || c.name || '').toLowerCase()).length;
+          return `
+          <div class="sf-cat-chip-wrap">
+            <button class="sf-cat-chip ${sfCategory === (c.id || c.name) ? 'active' : ''}" onclick="setSfCategory('${esc(c.id || c.name)}')">
+              <span>${esc(c.icon || '🏷️')}</span>
+              <span>${esc(c.name)}</span>
+              <span class="small muted">(${count})</span>
+            </button>
+            ${sfEditMode && c.id !== 'custom-bracelet' ? `
+              <div class="sf-cat-hover-ctrls">
+                <button onclick="editCategory('${esc(c.id)}')" title="Edit Category">✏️</button>
+                <button onclick="deleteCategory('${esc(c.id)}', '${esc(c.name).replace(/'/g, '')}')" title="Delete Category" style="color:#ef4444">🗑️</button>
+              </div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- Live Product Catalog Grid -->
+    <div class="sf-prod-section">
+      <div class="sf-prod-header">
+        <div>
+          <h3 style="margin:0;font-size:1.05rem">${sfCategory === 'all' ? 'Featured Catalog' : esc(sfCategory)}</h3>
+          <span class="muted small" id="sfProdCount">${displayProds.length} products found</span>
+        </div>
+        ${sfEditMode ? `
+          <button class="btn sm primary" onclick="editProduct()" style="padding:4px 12px;font-size:0.8rem">
+            ➕ Add Product
+          </button>` : ''}
+      </div>
+
+      <div class="sf-prod-grid" id="sfProdGrid">
+        ${displayProds.length === 0 ? `
+          <div style="grid-column:1/-1;text-align:center;padding:30px 10px;color:var(--muted)">
+            <p>No products found in this category.</p>
+            ${sfEditMode ? `<button class="btn primary sm" onclick="editProduct()">+ Add Product</button>` : ''}
+          </div>` : displayProds.map(p => renderSfProductCard(p, sfEditMode)).join('')}
+      </div>
+    </div>
+
+    <!-- Italy Charm Modular Studio Section -->
+    <div class="sf-studio-section">
+      <div class="sf-studio-header">
+        <div>
+          <h3 style="margin:0;font-size:1.05rem">🔗 Italy Charm Modular Bracelet Studio</h3>
+          <p class="muted small" style="margin:2px 0 0">Interactive bracelet preview & live charm link inventory</p>
+        </div>
+        ${sfEditMode ? `
+          <button class="btn sm primary" onclick="editCharm()" style="padding:4px 12px;font-size:0.8rem">
+            ➕ Add Charm Link
+          </button>` : ''}
+      </div>
+
+      <!-- Live Ribbon Preview -->
+      <div class="sf-studio-ribbon">
+        <div class="sf-bracelet-band">
+          ${Array.from({ length: 16 }).map((_, i) => {
+            const chItem = Ch[i % Ch.length];
+            return `
+            <div class="sf-band-slot">
+              ${chItem ? `<img src="${esc(chItem.image || 'charm_clean.png')}" alt="Slot" onerror="this.src='charm_clean.png'">` : `<span style="font-size:0.8rem">⚙️</span>`}
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="sf-band-info">
+          <span>16 Modular Stainless Steel Links</span>
+          <span class="sf-band-tag">Live Studio Preview</span>
+        </div>
+      </div>
+
+      <!-- Charms Inventory Grid -->
+      <div class="sf-charm-grid">
+        ${Ch.map(ch => renderSfCharmCard(ch, sfEditMode)).join('')}
+      </div>
+    </div>
+
+    <!-- Footer & Delivery Rules -->
+    <div class="sf-footer-rules glass">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h4 style="margin:0">🚚 Store Checkout & Delivery Info</h4>
+          <p class="muted small" style="margin:2px 0 0">
+            Standard Delivery: <b>${money(S.deliveryFee !== undefined ? S.deliveryFee : 1.5)}</b> • Free on orders over: <b>${money(S.freeDeliveryThreshold !== undefined ? S.freeDeliveryThreshold : 25)}</b> • ABA PayWay KHQR
+          </p>
+        </div>
+        ${sfEditMode ? `
+          <button class="btn sm ghost" onclick="editStorefrontDeliveryRules()">
+            ✏️ Edit Delivery Rules
+          </button>` : ''}
+      </div>
+    </div>
+  `;
+
+  $('#view').innerHTML = `
+  <div class="sf-control-bar glass">
+    <div class="sf-control-left">
+      <div class="sf-title-group">
+        <span class="sf-badge">👑 ADMIN DESK</span>
+        <h2 style="margin:0;font-size:1.25rem">Customer Shop — Live Visual Editor</h2>
+      </div>
+      <p class="muted small" style="margin:2px 0 0">
+        Directly preview and edit products, stock, categories, charms, announcement, and branding on the live customer shop layout.
+      </p>
+    </div>
+    <div class="sf-control-actions">
+      <!-- Device Selector -->
+      <div class="sf-btn-group">
+        <button class="btn sm ${sfDevice === 'mobile' ? 'primary' : 'ghost'}" onclick="setSfDevice('mobile')">
+          📱 Mobile View (390px)
+        </button>
+        <button class="btn sm ${sfDevice === 'desktop' ? 'primary' : 'ghost'}" onclick="setSfDevice('desktop')">
+          💻 Desktop View (100%)
+        </button>
+      </div>
+
+      <!-- Mode Selector -->
+      <div class="sf-btn-group">
+        <button class="btn sm ${sfEditMode ? 'ok' : 'ghost'}" onclick="toggleSfEditMode(true)" title="Show Admin Controls on cards and categories">
+          ✏️ Edit Mode ${sfEditMode ? '●' : ''}
+        </button>
+        <button class="btn sm ${!sfEditMode ? 'primary' : 'ghost'}" onclick="toggleSfEditMode(false)" title="Preview as regular customer without admin controls">
+          👁️ Customer View ${!sfEditMode ? '●' : ''}
+        </button>
+      </div>
+
+      <!-- Quick Add Actions -->
+      <button class="btn sm primary" onclick="editProduct()">➕ Add Product</button>
+      <button class="btn sm ghost" onclick="editCategory()">🏷️ Add Category</button>
+      <button class="btn sm ghost" onclick="editCharm()">🔗 Add Charm</button>
+      <button class="btn sm ghost" onclick="editStorefrontAnnouncement()">📢 Announcement</button>
+      <button class="btn sm ghost" onclick="editStorefrontBrand()">🎨 Brand</button>
+      <button class="btn sm ghost" onclick="window.open('${rawStoreUrl}', '_blank')" title="Open raw customer storefront in new browser tab">
+        🌐 Customer Store ↗
+      </button>
+    </div>
+  </div>
+
+  <div class="sf-canvas-wrapper">
+    ${sfDevice === 'mobile' ? `
+      <div class="sf-phone-frame">
+        <div class="sf-phone-notch"></div>
+        <div class="sf-phone-status">
+          <span>9:41</span>
+          <span>5G  🔋 100%</span>
+        </div>
+        <div class="sf-phone-viewport">
+          ${innerStorefrontHtml}
+        </div>
+      </div>` : `
+      <div class="sf-desktop-frame">
+        <div class="sf-desktop-viewport">
+          ${innerStorefrontHtml}
+        </div>
+      </div>`}
   </div>`;
 }
 
@@ -674,7 +1135,9 @@ function orders() {
         <tbody>
           ${list.map(o => {
             const u = SRDB.user(o.user_id || o.userId);
-            const contact = o.contact || {};
+            const contact = (typeof o.contact === 'string' ? JSON.parse(o.contact) : (o.contact || {})) || {};
+            const payStr = contact.payment || o.payment || '';
+            const isCod = payStr.includes('COD') || contact.payment_type === 'COD';
             return `
             <tr style="${o.status === 'Pending' ? 'background:rgba(234,179,8,0.04)' : ''}">
               <td>
@@ -686,6 +1149,7 @@ function orders() {
                 <b>@${esc(u?.username || 'user')}</b> <span class="badge ok">TG ✔</span>
                 <div class="muted small">📞 ${esc(contact.phone || u?.phone || '')}</div>
                 <div class="muted small">📍 ${esc(contact.address || '')}</div>
+                <div style="margin-top:4px"><span class="badge ${isCod ? 'warn' : 'ok'}" style="font-size:0.75rem">${isCod ? '💵 COD' : '📲 ABA KHQR'}</span></div>
               </td>
               <td class="small">
                 ${(o.items || []).map(i => `• ${esc(i.name)} ×<b>${i.qty}</b>`).join('<br>')}
@@ -722,7 +1186,9 @@ function orders() {
     <div class="admin-mobile-cards">
       ${list.map(o => {
         const u = SRDB.user(o.user_id || o.userId);
-        const contact = o.contact || {};
+        const contact = (typeof o.contact === 'string' ? JSON.parse(o.contact) : (o.contact || {})) || {};
+        const payStr = contact.payment || o.payment || '';
+        const isCod = payStr.includes('COD') || contact.payment_type === 'COD';
         return `
         <div class="admin-order-card" style="${o.status === 'Pending' ? 'border-color:rgba(234,179,8,0.5);background:rgba(234,179,8,0.06)' : ''}">
           <div class="aoc-header">
@@ -752,7 +1218,7 @@ function orders() {
               ${contact.name ? `<div>👤 ${esc(contact.name)}</div>` : ''}
               ${contact.phone || u?.phone ? `<div>📞 <a href="tel:${esc(contact.phone || u?.phone)}">${esc(contact.phone || u?.phone)}</a></div>` : ''}
               ${contact.address ? `<div>📍 ${esc(contact.address)}</div>` : ''}
-              ${contact.payment ? `<div>💳 ${esc(contact.payment)}</div>` : ''}
+              ${payStr ? `<div>💳 ${esc(payStr)} <span class="badge ${isCod ? 'warn' : 'ok'}" style="font-size:0.75rem">${isCod ? '💵 COD' : '📲 ABA KHQR'}</span></div>` : ''}
             </div>
           </div>
 
@@ -799,7 +1265,9 @@ function viewOrder(id) {
   const o = SRDB.order(id);
   if (!o) return;
   const u = SRDB.user(o.user_id || o.userId);
-  const contact = o.contact || {};
+  const contact = (typeof o.contact === 'string' ? JSON.parse(o.contact) : (o.contact || {})) || {};
+  const paymentStr = contact.payment || o.payment || (contact.payment_type === 'COD' ? 'Cash on Delivery (COD)' : 'ABA KHQR (Scan to Pay)');
+  const isCod = paymentStr.includes('COD') || contact.payment_type === 'COD';
 
   SRDB.markAllRead();
 
@@ -834,8 +1302,17 @@ function viewOrder(id) {
     Recipient Name: ${esc(contact.name)}<br>
     Phone Number: ${esc(contact.phone)}<br>
     Delivery Address: ${esc(contact.address)}<br>
-    Payment Method: ${esc(contact.payment)}<br>
+    Payment Method: <b>${esc(paymentStr)}</b> <span class="badge ${isCod ? 'warn' : 'ok'}">${isCod ? '💵 COD' : '📲 ABA KHQR'}</span><br>
     Order Status: <b>${o.status}</b><br>
+    ${isCod ? `
+    ----------------------------------------<br>
+    💵 <b>COLLECT CASH ON DELIVERY (COD):</b><br>
+    <span style="color:var(--gold,#eab308);font-size:0.82rem">Courier must collect ${money(o.total)} in cash upon handing package to customer.</span><br>
+    ` : `
+    ----------------------------------------<br>
+    📲 <b>PREPAID VIA ABA KHQR:</b><br>
+    <span style="color:var(--ok,#10b981);font-size:0.82rem">Customer paid via ABA KHQR. Verify transaction before confirming.</span><br>
+    `}
     ----------------------------------------<br>
     <b>PURCHASED ITEMS:</b><br>
     ${(o.items || []).map(i => {

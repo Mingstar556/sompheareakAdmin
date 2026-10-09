@@ -47,8 +47,8 @@
         </div>
         <p id="pinErr" class="err hidden">Incorrect PIN. Please check and try again.</p>
         <button id="pinBtn" class="btn primary" style="width:100%;margin-top:6px">Login to Admin Desk</button>
-        <div style="text-align:center;margin-top:10px">
-          <a href="#" onclick="window.open(window.SR_CONFIG ? window.SR_CONFIG.STOREFRONT_URL : 'http://127.0.0.1:5000', '_blank'); return false;" class="muted small" style="text-decoration:underline;display:inline-flex;align-items:center;gap:4px">🛍️ Open Customer Storefront ↗</a>
+        <div style="text-align:center;margin-top:10px;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap">
+          <a href="#" onclick="window.open(window.SR_CONFIG ? window.SR_CONFIG.STOREFRONT_URL : 'http://127.0.0.1:5000', '_blank'); return false;" class="muted small" style="text-decoration:underline;display:inline-flex;align-items:center;gap:4px">🛍️ Visit Customer Storefront ↗</a>
         </div>
       </div>
     </div>
@@ -66,6 +66,7 @@
         <button type="button" class="icon-btn notif-bell-btn" id="adminNotifBellBtn" title="Pending Order Confirmations" onclick="showPendingOrders()">
           🔔<span class="dot-count hidden" id="adminPendingCount">0</span>
         </button>
+        <button type="button" class="btn primary sm admin-launch-btn" onclick="launchFrontAdminMode()" title="Open Customer Shop in Admin Edit Mode">👑 Edit Storefront ↗</button>
         <button type="button" class="btn ghost sm admin-launch-btn" onclick="window.open(window.SR_CONFIG ? window.SR_CONFIG.STOREFRONT_URL : 'http://127.0.0.1:5000', '_blank')" title="Open Customer Storefront">🛍️ Store ↗</button>
         <button class="theme-switch" id="themeSwitch" type="button" aria-label="Toggle dark/light theme" title="Toggle dark/light mode">
           <span class="switch-knob">

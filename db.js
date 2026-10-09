@@ -162,9 +162,11 @@ const SRDB = (() => {
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         ...(opts.headers || {})
       };
+      const signal = opts.signal || (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined);
       const res = await fetch(`${API_BASE}${path}`, {
         ...opts,
         headers,
+        signal,
       });
       const ctype = res.headers.get('content-type') || '';
       if (!res.ok) {
@@ -195,10 +197,12 @@ const SRDB = (() => {
   async function login(pin) {
     try {
       const endpoint = `${API_BASE}/api/auth/exchange`;
+      const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: String(pin).trim() })
+        body: JSON.stringify({ pin: String(pin).trim() }),
+        signal,
       });
       const ctype = res.headers.get('content-type') || '';
       let data = null;
